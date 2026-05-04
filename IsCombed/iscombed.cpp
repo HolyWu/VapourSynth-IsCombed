@@ -17,10 +17,8 @@
 
 #include <cmath>
 
-#include <limits>
 #include <memory>
 #include <string>
-#include <type_traits>
 
 #include <VapourSynth4.h>
 #include <VSHelper4.h>
@@ -30,6 +28,7 @@ using namespace std::string_literals;
 struct IsCombedData final {
     VSNode* node;
     const VSVideoInfo* vi;
+    VSVideoFormat format;
     int cthresh, blockx, blocky, mi, metric;
     bool chroma;
     int arraySize, cthresh6, cthreshsq, heighta, widtha, xBlocks4, xHalf, xShift, yHalf, yShift;
@@ -42,48 +41,47 @@ static inline bool isPowerOf2(const int i) noexcept {
 
 template<typename pixel_t>
 static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RESTRICT d, const VSAPI* vsapi) noexcept {
-    constexpr pixel_t peak = std::numeric_limits<pixel_t>::max();
-
     for (int plane = 0; plane < (d->chroma ? 3 : 1); plane++) {
         const int width = vsapi->getFrameWidth(src, plane);
         const int height = vsapi->getFrameHeight(src, plane);
-        const ptrdiff_t stride = vsapi->getStride(src, plane) / sizeof(pixel_t);
+        const ptrdiff_t srcStride = vsapi->getStride(src, plane) / sizeof(pixel_t);
+        const ptrdiff_t cmkStride = vsapi->getStride(cmask, plane);
         const pixel_t* srcp = reinterpret_cast<const pixel_t*>(vsapi->getReadPtr(src, plane));
-        pixel_t* VS_RESTRICT cmkp = reinterpret_cast<pixel_t*>(vsapi->getWritePtr(cmask, plane));
+        uint8_t* VS_RESTRICT cmkp = vsapi->getWritePtr(cmask, plane);
 
-        const pixel_t* srcppp = srcp - stride * 2;
-        const pixel_t* srcpp = srcp - stride;
-        const pixel_t* srcpn = srcp + stride;
-        const pixel_t* srcpnn = srcp + stride * 2;
+        const pixel_t* srcppp = srcp - srcStride * 2;
+        const pixel_t* srcpp = srcp - srcStride;
+        const pixel_t* srcpn = srcp + srcStride;
+        const pixel_t* srcpnn = srcp + srcStride * 2;
 
-        memset(cmkp, 0, vsapi->getStride(cmask, plane) * height);
+        memset(cmkp, 0, cmkStride * height);
 
         if (d->metric == 0) {
             for (int x = 0; x < width; x++) {
                 const int sFirst = srcp[x] - srcpn[x];
                 if ((sFirst > d->cthresh || sFirst < -d->cthresh) && std::abs(srcpnn[x] + 4 * srcp[x] + srcpnn[x] - 3 * (srcpn[x] + srcpn[x])) > d->cthresh6)
-                    cmkp[x] = peak;
+                    cmkp[x] = 0xFF;
             }
-            srcppp += stride;
-            srcpp += stride;
-            srcp += stride;
-            srcpn += stride;
-            srcpnn += stride;
-            cmkp += stride;
+            srcppp += srcStride;
+            srcpp += srcStride;
+            srcp += srcStride;
+            srcpn += srcStride;
+            srcpnn += srcStride;
+            cmkp += cmkStride;
 
             for (int x = 0; x < width; x++) {
                 const int sFirst = srcp[x] - srcpp[x];
                 const int sSecond = srcp[x] - srcpn[x];
                 if (((sFirst > d->cthresh && sSecond > d->cthresh) || (sFirst < -d->cthresh && sSecond < -d->cthresh)) &&
                     std::abs(srcpnn[x] + 4 * srcp[x] + srcpnn[x] - 3 * (srcpp[x] + srcpn[x])) > d->cthresh6)
-                    cmkp[x] = peak;
+                    cmkp[x] = 0xFF;
             }
-            srcppp += stride;
-            srcpp += stride;
-            srcp += stride;
-            srcpn += stride;
-            srcpnn += stride;
-            cmkp += stride;
+            srcppp += srcStride;
+            srcpp += srcStride;
+            srcp += srcStride;
+            srcpn += srcStride;
+            srcpnn += srcStride;
+            cmkp += cmkStride;
 
             for (int y = 2; y < height - 2; y++) {
                 for (int x = 0; x < width; x++) {
@@ -91,14 +89,14 @@ static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RES
                     const int sSecond = srcp[x] - srcpn[x];
                     if (((sFirst > d->cthresh && sSecond > d->cthresh) || (sFirst < -d->cthresh && sSecond < -d->cthresh)) &&
                         std::abs(srcppp[x] + 4 * srcp[x] + srcpnn[x] - 3 * (srcpp[x] + srcpn[x])) > d->cthresh6)
-                        cmkp[x] = peak;
+                        cmkp[x] = 0xFF;
                 }
-                srcppp += stride;
-                srcpp += stride;
-                srcp += stride;
-                srcpn += stride;
-                srcpnn += stride;
-                cmkp += stride;
+                srcppp += srcStride;
+                srcpp += srcStride;
+                srcp += srcStride;
+                srcpn += srcStride;
+                srcpnn += srcStride;
+                cmkp += cmkStride;
             }
 
             for (int x = 0; x < width; x++) {
@@ -106,44 +104,44 @@ static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RES
                 const int sSecond = srcp[x] - srcpn[x];
                 if (((sFirst > d->cthresh && sSecond > d->cthresh) || (sFirst < -d->cthresh && sSecond < -d->cthresh)) &&
                     std::abs(srcppp[x] + 4 * srcp[x] + srcppp[x] - 3 * (srcpp[x] + srcpn[x])) > d->cthresh6)
-                    cmkp[x] = peak;
+                    cmkp[x] = 0xFF;
             }
-            srcppp += stride;
-            srcpp += stride;
-            srcp += stride;
-            srcpn += stride;
-            srcpnn += stride;
-            cmkp += stride;
+            srcppp += srcStride;
+            srcpp += srcStride;
+            srcp += srcStride;
+            srcpn += srcStride;
+            srcpnn += srcStride;
+            cmkp += cmkStride;
 
             for (int x = 0; x < width; x++) {
                 const int sFirst = srcp[x] - srcpp[x];
                 if ((sFirst > d->cthresh || sFirst < -d->cthresh) && std::abs(srcppp[x] + 4 * srcp[x] + srcppp[x] - 3 * (srcpp[x] + srcpp[x])) > d->cthresh6)
-                    cmkp[x] = peak;
+                    cmkp[x] = 0xFF;
             }
         } else {
             for (int x = 0; x < width; x++) {
                 if ((srcp[x] - srcpn[x]) * (srcp[x] - srcpn[x]) > d->cthreshsq)
-                    cmkp[x] = peak;
+                    cmkp[x] = 0xFF;
             }
-            srcpp += stride;
-            srcp += stride;
-            srcpn += stride;
-            cmkp += stride;
+            srcpp += srcStride;
+            srcp += srcStride;
+            srcpn += srcStride;
+            cmkp += cmkStride;
 
             for (int y = 1; y < height - 1; y++) {
                 for (int x = 0; x < width; x++) {
                     if ((srcp[x] - srcpp[x]) * (srcp[x] - srcpn[x]) > d->cthreshsq)
-                        cmkp[x] = peak;
+                        cmkp[x] = 0xFF;
                 }
-                srcpp += stride;
-                srcp += stride;
-                srcpn += stride;
-                cmkp += stride;
+                srcpp += srcStride;
+                srcp += srcStride;
+                srcpn += srcStride;
+                cmkp += cmkStride;
             }
 
             for (int x = 0; x < width; x++) {
                 if ((srcp[x] - srcpp[x]) * (srcp[x] - srcpp[x]) > d->cthreshsq)
-                    cmkp[x] = peak;
+                    cmkp[x] = 0xFF;
             }
         }
     }
@@ -151,30 +149,26 @@ static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RES
     if (d->chroma) {
         const int width = vsapi->getFrameWidth(cmask, 2);
         const int height = vsapi->getFrameHeight(cmask, 2);
-        const ptrdiff_t stride = vsapi->getStride(cmask, 0) / sizeof(pixel_t);
+        const ptrdiff_t stride = vsapi->getStride(cmask, 0);
         const ptrdiff_t strideY = stride << d->vi->format.subSamplingH;
-        const ptrdiff_t strideUV = vsapi->getStride(cmask, 2) / sizeof(pixel_t);
-        pixel_t* VS_RESTRICT cmkp = reinterpret_cast<pixel_t*>(vsapi->getWritePtr(cmask, 0));
-        const pixel_t* cmkpU = reinterpret_cast<const pixel_t*>(vsapi->getReadPtr(cmask, 1));
-        const pixel_t* cmkpV = reinterpret_cast<const pixel_t*>(vsapi->getReadPtr(cmask, 2));
+        const ptrdiff_t strideUV = vsapi->getStride(cmask, 2);
+        uint8_t* VS_RESTRICT cmkp = vsapi->getWritePtr(cmask, 0);
+        const uint8_t* cmkpU = vsapi->getReadPtr(cmask, 1);
+        const uint8_t* cmkpV = vsapi->getReadPtr(cmask, 2);
 
-        pixel_t* VS_RESTRICT cmkpp3 = cmkp - stride * 3;
-        pixel_t* VS_RESTRICT cmkpp2 = cmkp - stride * 2;
-        pixel_t* VS_RESTRICT cmkpp = cmkp - stride;
-        pixel_t* VS_RESTRICT cmkpn = cmkp + stride;
-        pixel_t* VS_RESTRICT cmkpn2 = cmkp + stride * 2;
-        const pixel_t* cmkppU = cmkpU - strideUV;
-        const pixel_t* cmkpnU = cmkpU + strideUV;
-        const pixel_t* cmkppV = cmkpV - strideUV;
-        const pixel_t* cmkpnV = cmkpV + strideUV;
+        uint8_t* VS_RESTRICT cmkpp = cmkp - stride;
+        uint8_t* VS_RESTRICT cmkpn = cmkp + stride;
+        uint8_t* VS_RESTRICT cmkpnn = cmkp + stride * 2;
+        const uint8_t* cmkppU = cmkpU - strideUV;
+        const uint8_t* cmkpnU = cmkpU + strideUV;
+        const uint8_t* cmkppV = cmkpV - strideUV;
+        const uint8_t* cmkpnV = cmkpV + strideUV;
 
         for (int y = 1; y < height - 1; y++) {
-            cmkpp3 += strideY;
-            cmkpp2 += strideY;
             cmkpp += strideY;
             cmkp += strideY;
             cmkpn += strideY;
-            cmkpn2 += strideY;
+            cmkpnn += strideY;
             cmkppU += strideUV;
             cmkpU += strideUV;
             cmkpnU += strideUV;
@@ -186,72 +180,25 @@ static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RES
                 if ((cmkpU[x] && (cmkpU[x - 1] || cmkpU[x + 1] || cmkppU[x - 1] || cmkppU[x] || cmkppU[x + 1] || cmkpnU[x - 1] || cmkpnU[x] || cmkpnU[x + 1])) ||
                     (cmkpV[x] && (cmkpV[x - 1] || cmkpV[x + 1] || cmkppV[x - 1] || cmkppV[x] || cmkppV[x + 1] || cmkpnV[x - 1] || cmkpnV[x] || cmkpnV[x + 1]))) {
                     if (d->vi->format.subSamplingW == 0) {
-                        cmkp[x] = peak;
+                        cmkp[x] = 0xFF;
 
                         if (d->vi->format.subSamplingH > 0) {
-                            cmkpn[x] = peak;
-                            (y & 1 ? cmkpp : cmkpn2)[x] = peak;
-
-                            if (d->vi->format.subSamplingH == 2) {
-                                cmkpp2[x] = peak;
-                                (y & 1 ? cmkpp3 : cmkpp)[x] = peak;
-                            }
+                            cmkpn[x] = 0xFF;
+                            (y & 1 ? cmkpp : cmkpnn)[x] = 0xFF;
                         }
                     } else if (d->vi->format.subSamplingW == 1) {
-                        if constexpr (std::is_same_v<pixel_t, uint8_t>) {
-                            constexpr uint16_t peak2 = std::numeric_limits<uint16_t>::max();
-                            reinterpret_cast<uint16_t*>(cmkp)[x] = peak2;
+                        reinterpret_cast<uint16_t*>(cmkp)[x] = 0xFFFF;
 
-                            if (d->vi->format.subSamplingH > 0) {
-                                reinterpret_cast<uint16_t*>(cmkpn)[x] = peak2;
-                                reinterpret_cast<uint16_t*>(y & 1 ? cmkpp : cmkpn2)[x] = peak2;
-
-                                if (d->vi->format.subSamplingH == 2) {
-                                    reinterpret_cast<uint16_t*>(cmkpp2)[x] = peak2;
-                                    reinterpret_cast<uint16_t*>(y & 1 ? cmkpp3 : cmkpp)[x] = peak2;
-                                }
-                            }
-                        } else {
-                            constexpr uint32_t peak2 = std::numeric_limits<uint32_t>::max();
-                            reinterpret_cast<uint32_t*>(cmkp)[x] = peak2;
-
-                            if (d->vi->format.subSamplingH > 0) {
-                                reinterpret_cast<uint32_t*>(cmkpn)[x] = peak2;
-                                reinterpret_cast<uint32_t*>(y & 1 ? cmkpp : cmkpn2)[x] = peak2;
-
-                                if (d->vi->format.subSamplingH == 2) {
-                                    reinterpret_cast<uint32_t*>(cmkpp2)[x] = peak2;
-                                    reinterpret_cast<uint32_t*>(y & 1 ? cmkpp3 : cmkpp)[x] = peak2;
-                                }
-                            }
+                        if (d->vi->format.subSamplingH > 0) {
+                            reinterpret_cast<uint16_t*>(cmkpn)[x] = 0xFFFF;
+                            reinterpret_cast<uint16_t*>(y & 1 ? cmkpp : cmkpnn)[x] = 0xFFFF;
                         }
                     } else {
-                        if constexpr (std::is_same_v<pixel_t, uint8_t>) {
-                            constexpr uint32_t peak2 = std::numeric_limits<uint32_t>::max();
-                            reinterpret_cast<uint32_t*>(cmkp)[x] = peak2;
+                        reinterpret_cast<uint32_t*>(cmkp)[x] = 0xFFFFFFFF;
 
-                            if (d->vi->format.subSamplingH > 0) {
-                                reinterpret_cast<uint32_t*>(cmkpn)[x] = peak2;
-                                reinterpret_cast<uint32_t*>(y & 1 ? cmkpp : cmkpn2)[x] = peak2;
-
-                                if (d->vi->format.subSamplingH == 2) {
-                                    reinterpret_cast<uint32_t*>(cmkpp2)[x] = peak2;
-                                    reinterpret_cast<uint32_t*>(y & 1 ? cmkpp3 : cmkpp)[x] = peak2;
-                                }
-                            }
-                        } else {
-                            constexpr uint64_t peak2 = std::numeric_limits<uint64_t>::max();
-                            reinterpret_cast<uint64_t*>(cmkp)[x] = peak2;
-
-                            if (d->vi->format.subSamplingH > 0) {
-                                reinterpret_cast<uint64_t*>(cmkpn)[x] = peak2;
-                                reinterpret_cast<uint64_t*>(y & 1 ? cmkpp : cmkpn2)[x] = peak2;
-
-                                if (d->vi->format.subSamplingH == 2) {
-                                    reinterpret_cast<uint64_t*>(cmkpp2)[x] = peak2;
-                                    reinterpret_cast<uint64_t*>(y & 1 ? cmkpp3 : cmkpp)[x] = peak2;
-                                }
-                            }
+                        if (d->vi->format.subSamplingH > 0) {
+                            reinterpret_cast<uint32_t*>(cmkpn)[x] = 0xFFFFFFFF;
+                            reinterpret_cast<uint32_t*>(y & 1 ? cmkpp : cmkpnn)[x] = 0xFFFFFFFF;
                         }
                     }
                 }
@@ -261,14 +208,13 @@ static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RES
 
     const int width = vsapi->getFrameWidth(cmask, 0);
     const int height = vsapi->getFrameHeight(cmask, 0);
-    const ptrdiff_t stride = vsapi->getStride(cmask, 0) / sizeof(pixel_t);
-    const pixel_t* cmkp = reinterpret_cast<const pixel_t*>(vsapi->getReadPtr(cmask, 0)) + stride;
+    const ptrdiff_t stride = vsapi->getStride(cmask, 0);
+    const uint8_t* cmkp = vsapi->getReadPtr(cmask, 0) + stride;
 
-    const pixel_t* cmkpp = cmkp - stride;
-    const pixel_t* cmkpn = cmkp + stride;
+    const uint8_t* cmkpp = cmkp - stride;
+    const uint8_t* cmkpn = cmkp + stride;
 
-    auto _cArray = std::make_unique<int[]>(d->arraySize);
-    int* VS_RESTRICT cArray = _cArray.get();
+    auto cArray = std::make_unique<int[]>(d->arraySize);
 
     for (int y = 1; y < d->yHalf; y++) {
         const int temp1 = (y >> d->yShift) * d->xBlocks4;
@@ -278,7 +224,7 @@ static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RES
             if (cmkpp[x] && cmkp[x] && cmkpn[x]) {
                 const int box1 = (x >> d->xShift) * 4;
                 const int box2 = ((x + d->xHalf) >> d->xShift) * 4;
-                ++cArray[temp1 + box1];
+                ++cArray[temp1 + box1 + 0];
                 ++cArray[temp1 + box2 + 1];
                 ++cArray[temp2 + box1 + 2];
                 ++cArray[temp2 + box2 + 3];
@@ -295,9 +241,9 @@ static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RES
         const int temp2 = ((y + d->yHalf) >> d->yShift) * d->xBlocks4;
 
         for (int x = 0; x < d->widtha; x += d->xHalf) {
-            const pixel_t* cmkppT = cmkpp;
-            const pixel_t* cmkpT = cmkp;
-            const pixel_t* cmkpnT = cmkpn;
+            const uint8_t* cmkppT = cmkpp;
+            const uint8_t* cmkpT = cmkp;
+            const uint8_t* cmkpnT = cmkpn;
             int sum = 0;
 
             for (int u = 0; u < d->yHalf; u++) {
@@ -313,7 +259,7 @@ static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RES
             if (sum) {
                 const int box1 = (x >> d->xShift) * 4;
                 const int box2 = ((x + d->xHalf) >> d->xShift) * 4;
-                cArray[temp1 + box1] += sum;
+                cArray[temp1 + box1 + 0] += sum;
                 cArray[temp1 + box2 + 1] += sum;
                 cArray[temp2 + box1 + 2] += sum;
                 cArray[temp2 + box2 + 3] += sum;
@@ -321,9 +267,9 @@ static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RES
         }
 
         for (int x = d->widtha; x < width; x++) {
-            const pixel_t* cmkppT = cmkpp;
-            const pixel_t* cmkpT = cmkp;
-            const pixel_t* cmkpnT = cmkpn;
+            const uint8_t* cmkppT = cmkpp;
+            const uint8_t* cmkpT = cmkp;
+            const uint8_t* cmkpnT = cmkpn;
             int sum = 0;
 
             for (int u = 0; u < d->yHalf; u++) {
@@ -337,7 +283,7 @@ static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RES
             if (sum) {
                 const int box1 = (x >> d->xShift) * 4;
                 const int box2 = ((x + d->xHalf) >> d->xShift) * 4;
-                cArray[temp1 + box1] += sum;
+                cArray[temp1 + box1 + 0] += sum;
                 cArray[temp1 + box2 + 1] += sum;
                 cArray[temp2 + box1 + 2] += sum;
                 cArray[temp2 + box2 + 3] += sum;
@@ -357,7 +303,7 @@ static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RES
             if (cmkpp[x] && cmkp[x] && cmkpn[x]) {
                 const int box1 = (x >> d->xShift) * 4;
                 const int box2 = ((x + d->xHalf) >> d->xShift) * 4;
-                ++cArray[temp1 + box1];
+                ++cArray[temp1 + box1 + 0];
                 ++cArray[temp1 + box2 + 1];
                 ++cArray[temp2 + box1 + 2];
                 ++cArray[temp2 + box2 + 3];
@@ -379,13 +325,13 @@ static int filter(const VSFrame* src, VSFrame* cmask, const IsCombedData* VS_RES
 
 static const VSFrame* VS_CC isCombedGetFrame(int n, int activationReason, void* instanceData, [[maybe_unused]] void** frameData, VSFrameContext* frameCtx,
                                              VSCore* core, const VSAPI* vsapi) {
-    auto d = static_cast<IsCombedData*>(instanceData);
+    auto d = static_cast<const IsCombedData*>(instanceData);
 
     if (activationReason == arInitial) {
         vsapi->requestFrameFilter(n, d->node, frameCtx);
     } else if (activationReason == arAllFramesReady) {
         const VSFrame* src = vsapi->getFrameFilter(n, d->node, frameCtx);
-        VSFrame* cmask = vsapi->newVideoFrame(&d->vi->format, d->vi->width, d->vi->height, nullptr, core);
+        VSFrame* cmask = vsapi->newVideoFrame(&d->format, d->vi->width, d->vi->height, nullptr, core);
         VSFrame* dst = vsapi->copyFrame(src, core);
 
         vsapi->mapSetInt(vsapi->getFramePropertiesRW(dst), "_Combed", d->filter(src, cmask, d, vsapi), maReplace);
@@ -423,6 +369,8 @@ static void VS_CC isCombedCreate(const VSMap* in, VSMap* out, [[maybe_unused]] v
 
         if (d->vi->format.subSamplingH > 2)
             throw "only vertical chroma subsampling 1x-4x supported"s;
+
+        vsapi->queryVideoFormat(&d->format, d->vi->format.colorFamily, stInteger, 8, d->vi->format.subSamplingW, d->vi->format.subSamplingH, core);
 
         d->cthresh = vsapi->mapGetIntSaturated(in, "cthresh", 0, &err);
         if (err)
