@@ -361,14 +361,8 @@ static void VS_CC isCombedCreate(const VSMap* in, VSMap* out, [[maybe_unused]] v
         if (!vsh::isConstantVideoFormat(d->vi) || d->vi->format.sampleType != stInteger || d->vi->format.bitsPerSample > 16)
             throw "only constant format 8-16 bit integer input supported"s;
 
-        if (d->vi->height < 5)
-            throw "height must be greater than or equal to 5"s;
-
         if (d->vi->format.subSamplingW > 2)
             throw "only horizontal chroma subsampling 1x-4x supported"s;
-
-        if (d->vi->format.subSamplingH > 2)
-            throw "only vertical chroma subsampling 1x-4x supported"s;
 
         vsapi->queryVideoFormat(&d->format, d->vi->format.colorFamily, stInteger, 8, d->vi->format.subSamplingW, d->vi->format.subSamplingH, core);
 
