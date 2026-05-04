@@ -442,7 +442,7 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
     vspapi->configPlugin("com.holywu.iscombed",
                          "iscombed",
                          "Check whether or not a frame is combed",
-                         VS_MAKE_VERSION(2, 0),
+                         VS_MAKE_VERSION(2, 1),
                          VAPOURSYNTH_API_VERSION,
                          0,
                          plugin);
